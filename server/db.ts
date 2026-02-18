@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, users, agents, agentExecutions, apiKeys, subscriptions, usageTracking, workflows, workflowExecutions, InsertAgent, InsertAgentExecution, InsertApiKey, InsertSubscription, InsertUsageTracking } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,85 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+// Agent queries
+export async function getUserAgents(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(agents).where(eq(agents.userId, userId));
+}
+
+export async function getAgentById(agentId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(agents).where(eq(agents.id, agentId)).limit(1);
+  return result[0];
+}
+
+export async function createAgent(data: InsertAgent) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(agents).values(data);
+  return result;
+}
+
+export async function updateAgent(agentId: number, data: Partial<InsertAgent>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.update(agents).set(data).where(eq(agents.id, agentId));
+}
+
+export async function deleteAgent(agentId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.delete(agents).where(eq(agents.id, agentId));
+}
+
+// Execution queries
+export async function getAgentExecutions(agentId: number, limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(agentExecutions).where(eq(agentExecutions.agentId, agentId)).limit(limit);
+}
+
+export async function createExecution(data: InsertAgentExecution) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.insert(agentExecutions).values(data);
+}
+
+// API Key queries
+export async function getUserApiKeys(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(apiKeys).where(eq(apiKeys.userId, userId));
+}
+
+export async function getApiKeyByKey(key: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(apiKeys).where(eq(apiKeys.key, key)).limit(1);
+  return result[0];
+}
+
+// Subscription queries
+export async function getUserSubscription(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).limit(1);
+  return result[0];
+}
+
+// API Key creation
+export async function createApiKey(data: InsertApiKey) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.insert(apiKeys).values(data);
+}
+
+// Usage tracking queries
+export async function getUserUsageTracking(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(usageTracking).where(eq(usageTracking.userId, userId)).limit(1);
+  return result[0];
+}

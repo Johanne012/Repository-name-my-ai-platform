@@ -39,8 +39,10 @@ const MAX_WIDTH = 480;
 
 export default function DashboardLayout({
   children,
+  title,
 }: {
   children: React.ReactNode;
+  title?: string;
 }) {
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
@@ -90,7 +92,7 @@ export default function DashboardLayout({
         } as CSSProperties
       }
     >
-      <DashboardLayoutContent setSidebarWidth={setSidebarWidth}>
+      <DashboardLayoutContent setSidebarWidth={setSidebarWidth} title={title}>
         {children}
       </DashboardLayoutContent>
     </SidebarProvider>
@@ -100,11 +102,13 @@ export default function DashboardLayout({
 type DashboardLayoutContentProps = {
   children: React.ReactNode;
   setSidebarWidth: (width: number) => void;
+  title?: string;
 };
 
 function DashboardLayoutContent({
   children,
   setSidebarWidth,
+  title,
 }: DashboardLayoutContentProps) {
   const { user, logout } = useAuth();
   const [location, setLocation] = useLocation();
@@ -255,6 +259,11 @@ function DashboardLayoutContent({
                 </div>
               </div>
             </div>
+          </div>
+        )}
+        {!isMobile && title && (
+          <div className="border-b bg-background/95 px-6 py-4">
+            <h2 className="text-2xl font-bold text-slate-900">{title}</h2>
           </div>
         )}
         <main className="flex-1 p-4">{children}</main>
