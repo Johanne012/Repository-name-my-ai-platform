@@ -1,12 +1,43 @@
-import React from 'react';
+import React, { useState } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Check, CreditCard, Download } from 'lucide-react';
+import { Check, CreditCard, Download, Loader2 } from 'lucide-react';
 import { trpc } from '@/lib/trpc';
+import { toast } from 'sonner';
+import { useAuth } from '@/_core/hooks/useAuth';
 
 export default function Billing() {
+  const { user } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [billingInterval, setBillingInterval] = useState<'month' | 'year'>('month');
   const { data: subscription } = trpc.subscriptions.getCurrent.useQuery();
+  const createCheckout = trpc.stripe.createCheckoutSession.useMutation();
+
+  const handleUpgrade = async (plan: 'pro' | 'enterprise') => {
+    if (!user?.email) {
+      toast.error('البريد الإلكتروني مفقود');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await createCheckout.mutateAsync({
+        plan,
+        interval: billingInterval,
+        origin: window.location.origin,
+      });
+
+      if (result.url) {
+        window.open(result.url, '_blank');
+        toast.success('تم فتح صفحة الدفع');
+      }
+    } catch (error: any) {
+      toast.error(`خطأ: ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const plans = [
     {
@@ -14,25 +45,51 @@ export default function Billing() {
       price: 0,
       features: ['5 وكلاء', '100 تنفيذ/شهر', 'دعم أساسي'],
       current: subscription?.plan === 'free',
+      plan: null,
     },
     {
       name: 'احترافي',
-      price: 99,
+      price: billingInterval === 'month' ? 99 : 1069,
       features: ['50 وكيل', '10,000 تنفيذ/شهر', 'دعم أولوي', 'API متقدمة'],
       current: subscription?.plan === 'pro',
       highlighted: true,
+      plan: 'pro' as const,
     },
     {
       name: 'مؤسسي',
-      price: 999,
+      price: billingInterval === 'month' ? 999 : 10789,
       features: ['وكلاء غير محدودة', 'تنفيذات غير محدودة', 'دعم 24/7', 'SLA مخصص'],
       current: subscription?.plan === 'enterprise',
+      plan: 'enterprise' as const,
     },
   ];
 
   return (
     <DashboardLayout title="الفوترة والاشتراكات">
       <div className="space-y-8">
+        {/* Billing Interval Toggle */}
+        <Card>
+          <CardHeader>
+            <CardTitle>فترة الفوترة</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-4">
+              <Button
+                variant={billingInterval === 'month' ? 'default' : 'outline'}
+                onClick={() => setBillingInterval('month')}
+              >
+                شهري
+              </Button>
+              <Button
+                variant={billingInterval === 'year' ? 'default' : 'outline'}
+                onClick={() => setBillingInterval('year')}
+              >
+                سنوي (توفير 15%)
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Current Plan */}
         <Card>
           <CardHeader>
@@ -95,10 +152,15 @@ export default function Billing() {
                   <Button
                     className="w-full"
                     variant={plan.current ? 'default' : 'outline'}
-                    disabled={plan.current}
+                    disabled={plan.current || loading}
+                    onClick={() => plan.plan && handleUpgrade(plan.plan)}
                   >
+                    {loading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
                     {plan.current ? 'الخطة الحالية' : 'الترقية'}
                   </Button>
+                  <div className="text-sm text-slate-600 text-center mt-2">
+                    {billingInterval === 'month' ? 'شهري' : 'سنوي'}
+                  </div>
                 </CardContent>
               </Card>
             ))}

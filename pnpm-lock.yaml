@@ -190,6 +190,9 @@ importers:
       streamdown:
         specifier: ^1.4.0
         version: 1.4.0(@types/react@19.2.1)(react@19.2.1)
+      stripe:
+        specifier: ^20.4.0
+        version: 20.4.0(@types/node@24.7.0)
       superjson:
         specifier: ^1.13.3
         version: 1.13.3
@@ -233,6 +236,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.1
         version: 19.2.1(@types/react@19.2.1)
+      '@types/stripe':
+        specifier: ^8.0.417
+        version: 8.0.417(@types/node@24.7.0)
       '@vitejs/plugin-react':
         specifier: ^5.0.4
         version: 5.0.4(vite@7.1.9(@types/node@24.7.0)(jiti@2.6.1)(lightningcss@1.30.1)(tsx@4.20.6))
@@ -2320,6 +2326,10 @@ packages:
   '@types/serve-static@1.15.9':
     resolution: {integrity: sha512-dOTIuqpWLyl3BBXU3maNQsS4A3zuuoYRNIvYSxxhebPfXg2mzWQEPne/nlJ37yOse6uGgR386uTpdsx4D0QZWA==}
 
+  '@types/stripe@8.0.417':
+    resolution: {integrity: sha512-PTuqskh9YKNENnOHGVJBm4sM0zE8B1jZw1JIskuGAPkMB+OH236QeN8scclhYGPA4nG6zTtPXgwpXdp+HPDTVw==}
+    deprecated: This is a stub types definition. stripe provides its own type definitions, so you do not need this installed.
+
   '@types/trusted-types@2.0.7':
     resolution: {integrity: sha512-ScaPdn1dQczgbl0QFTeTOmVHFULt394XJgOQNoyVhZ6r2vLnMLJfBPd53SB52T/3G36VI1/g2MZaX0cwDuXsfw==}
 
@@ -3975,6 +3985,15 @@ packages:
 
   stringify-entities@4.0.4:
     resolution: {integrity: sha512-IwfBptatlO+QCJUo19AqvrPNqlVMpW9YEL2LIVY+Rpv2qsjCGxaDLNRgeGsQWJhfItebuJhsGSLjaBbNSQ+ieg==}
+
+  stripe@20.4.0:
+    resolution: {integrity: sha512-F/aN1IQ9vHmlyLNi3DkiIbyzQb6gyBG0uYFd/VrEVQSc9BLtlgknPUx0EvzZdBMRLFuRaPFIFd7Mxwtg7Pbwzw==}
+    engines: {node: '>=16'}
+    peerDependencies:
+      '@types/node': '>=16'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
 
   strnum@2.1.1:
     resolution: {integrity: sha512-7ZvoFTiCnGxBtDqJ//Cu6fWtZtc7Y3x+QOirG15wztbdngGSkht27o2pyGWrVy0b4WAy3jbKmnoK6g5VlVNUUw==}
@@ -6669,6 +6688,12 @@ snapshots:
       '@types/node': 24.7.0
       '@types/send': 0.17.5
 
+  '@types/stripe@8.0.417(@types/node@24.7.0)':
+    dependencies:
+      stripe: 20.4.0(@types/node@24.7.0)
+    transitivePeerDependencies:
+      - '@types/node'
+
   '@types/trusted-types@2.0.7':
     optional: true
 
@@ -8691,6 +8716,10 @@ snapshots:
     dependencies:
       character-entities-html4: 2.1.0
       character-entities-legacy: 3.0.0
+
+  stripe@20.4.0(@types/node@24.7.0):
+    optionalDependencies:
+      '@types/node': 24.7.0
 
   strnum@2.1.1: {}
 
