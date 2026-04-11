@@ -19,7 +19,6 @@ export const appRouter = router({
     }),
   }),
 
-  // Agents Management
   agents: router({
     list: protectedProcedure
       .query(async ({ ctx }) => {
@@ -37,7 +36,7 @@ export const appRouter = router({
         name: z.string().min(1),
         description: z.string().optional(),
         systemPrompt: z.string().optional(),
-        model: z.string().default("gpt-4.1-mini"),
+        model: z.string().default("gpt-4-mini"),
         tools: z.any().optional(),
         config: z.any().optional(),
       }))
@@ -69,7 +68,6 @@ export const appRouter = router({
       }),
   }),
 
-  // Agent Executions
   executions: router({
     list: protectedProcedure
       .input(z.object({ agentId: z.number(), limit: z.number().default(50) }))
@@ -94,7 +92,6 @@ export const appRouter = router({
       }),
   }),
 
-  // API Keys Management
   apiKeys: router({
     list: protectedProcedure
       .query(async ({ ctx }) => {
@@ -114,7 +111,6 @@ export const appRouter = router({
       }),
   }),
 
-  // Subscriptions
   subscriptions: router({
     getCurrent: protectedProcedure
       .query(async ({ ctx }) => {
@@ -122,11 +118,43 @@ export const appRouter = router({
       }),
   }),
 
-  // Usage Tracking
   usage: router({
     getCurrent: protectedProcedure
       .query(async ({ ctx }) => {
         return db.getUserUsageTracking(ctx.user.id);
+      }),
+  }),
+
+  workflows: router({
+    create: protectedProcedure
+      .input(z.object({
+        name: z.string().min(1),
+        nodes: z.array(z.object({
+          agentId: z.number(),
+          position: z.object({ x: z.number(), y: z.number() }),
+        })),
+        edges: z.array(z.object({
+          from: z.number(),
+          to: z.number(),
+        })),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return { id: 1, name: input.name, status: "created", userId: ctx.user.id };
+      }),
+    
+    execute: protectedProcedure
+      .input(z.object({
+        nodes: z.array(z.object({
+          agentId: z.number(),
+          position: z.object({ x: z.number(), y: z.number() }),
+        })),
+        edges: z.array(z.object({
+          from: z.number(),
+          to: z.number(),
+        })),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        return { id: 1, status: "executing", userId: ctx.user.id };
       }),
   }),
 });
