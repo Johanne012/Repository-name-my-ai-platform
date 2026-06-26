@@ -10,6 +10,9 @@ import Settings from "./pages/Settings";
 import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
 import Orchestration from "./pages/Orchestration";
+import Analytics from "./pages/Analytics";
+import ApiDocs from "./pages/ApiDocs";
+import Notifications from "./pages/Notifications";
 import Home from "@/pages/Home";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -23,6 +26,9 @@ function Router() {
       <Route path={"/agents"} component={Agents} />
       <Route path={"/agent-test"} component={AgentTest} />
       <Route path={"/orchestration"} component={Orchestration} />
+      <Route path={"/analytics"} component={Analytics} />
+      <Route path={"/api-docs"} component={ApiDocs} />
+      <Route path={"/notifications"} component={Notifications} />
       <Route path={"/api-keys"} component={ApiKeys} />
       <Route path={"/billing"} component={Billing} />
       <Route path={"/settings"} component={Settings} />

@@ -139,3 +139,18 @@ export const workflowExecutions = mysqlTable("workflowExecutions", {
 
 export type WorkflowExecution = typeof workflowExecutions.$inferSelect;
 export type InsertWorkflowExecution = typeof workflowExecutions.$inferInsert;
+
+// Notifications table
+export const notifications = mysqlTable("notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  type: mysqlEnum("type", ["execution_completed", "execution_failed", "workflow_completed", "subscription_updated", "alert"]).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message").notNull(),
+  data: json("data"),
+  read: boolean("read").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Notification = typeof notifications.$inferSelect;
+export type InsertNotification = typeof notifications.$inferInsert;

@@ -157,6 +157,37 @@ export const appRouter = router({
         return { id: 1, status: "executing", userId: ctx.user.id };
       }),
   }),
+
+  notifications: router({
+    list: protectedProcedure
+      .query(async ({ ctx }) => {
+        const database = await db.getDb();
+        if (!database) return [];
+        const { notifications } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        return database.select().from(notifications).where(eq(notifications.userId, ctx.user.id)).orderBy(t => t.createdAt).limit(20);
+      }),
+    
+    markAsRead: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const database = await db.getDb();
+        if (!database) return null;
+        const { notifications } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        return database.update(notifications).set({ read: true }).where(eq(notifications.id, input.id));
+      }),
+    
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ input }) => {
+        const database = await db.getDb();
+        if (!database) return null;
+        const { notifications } = await import('../drizzle/schema');
+        const { eq } = await import('drizzle-orm');
+        return database.delete(notifications).where(eq(notifications.id, input.id));
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;
