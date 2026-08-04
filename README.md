@@ -1,203 +1,78 @@
-# AgenticAI - منصة الوكلاء الذكيين
+# AgenticAI — منصة الوكلاء الذكيين
 
-منصة متكاملة وشاملة لبناء وإدارة وتشغيل الوكلاء الذكيين (AI Agents) مع قدرات Multi-Agent Orchestration متقدمة.
+[![CI](https://github.com/Johanne012/Repository-name-my-ai-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/Johanne012/Repository-name-my-ai-platform/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./package.json)
 
-## المميزات الرئيسية
+منصة لإدارة وتشغيل وكلاء ذكيين (AI Agents) مع لوحة تحكم، مفاتيح API، فوترة Stripe، وتتبع استخدام.
 
-**إدارة الوكلاء:** بناء وتعديل وحذف الوكلاء الذكيين مع واجهة سهلة الاستخدام.
+> **ملاحظة:** اسم المستودع على GitHub ما زال `Repository-name-my-ai-platform` — يُفضَّل إعادة تسميته إلى `agentic-ai` من إعدادات المستودع.
 
-**اختبار تفاعلي:** واجهة دردشة متقدمة لاختبار الوكلاء مع عرض سجلات ReAct (Reasoning & Acting).
+## المميزات
 
-**تنسيق متعدد الوكلاء:** تنسيق عمل عدة وكلاء معاً لتنفيذ مهام معقدة.
+- إدارة الوكلاء (CRUD) مع فحص ملكية (مضاد IDOR)
+- واجهة اختبار تفاعلية وسجلات ReAct
+- مفاتيح API آمنة (hash في الخادم + عرض لمرة واحدة)
+- اشتراكات Stripe وخطط استخدام
+- Workflows متعددة الوكلاء (حفظ في DB؛ محرك التشغيل الكامل قيد التطوير)
+- رؤوس أمان HTTP + `/health`
 
-**إدارة مفاتيح API:** إنشاء وإدارة مفاتيح API للتكامل مع الأنظمة الخارجية.
-
-**نظام الفوترة:** خطط اشتراك مرنة (مجاني، احترافي، مؤسسي) مع تتبع الاستخدام.
-
-**لوحة تحكم احترافية:** عرض إحصائيات شاملة وتتبع أداء الوكلاء.
-
-**وثائق قانونية:** شروط خدمة وسياسة خصوصية شاملة مع امتثال كامل للوائح.
-
-**أمان عالي:** مصادقة Manus OAuth، تشفير البيانات، وإدارة الأدوار.
-
-## البدء السريع
-
-### المتطلبات
+## المتطلبات
 
 - Node.js 22+
 - pnpm 10+
-- قاعدة بيانات MySQL/TiDB
+- MySQL / TiDB
 
-### التثبيت
+## التثبيت
 
 ```bash
-# استنساخ المشروع
-git clone <repo-url>
-cd agentic-ai-startup
+git clone https://github.com/Johanne012/Repository-name-my-ai-platform.git
+cd Repository-name-my-ai-platform
+cp .env.example .env
+# عدّل DATABASE_URL و JWT_SECRET
 
-# تثبيت المكتبات
 pnpm install
-
-# إعداد قاعدة البيانات
 pnpm db:push
-
-# تشغيل خادم التطوير
 pnpm dev
 ```
 
-الآن يمكنك الوصول إلى التطبيق على `http://localhost:3000`.
+- التطبيق: `http://localhost:3000`
+- الصحة: `http://localhost:3000/health`
 
-## البنية المعمارية
+## البنية
 
 ```
-agentic-ai-startup/
-├── client/          # Frontend (React + Tailwind)
-├── server/          # Backend (Express + tRPC)
-├── drizzle/         # Database schema
-├── shared/          # Shared types
-└── storage/         # S3 helpers
+├── client/          # React 19 + Tailwind + tRPC client
+├── server/          # Express + tRPC + middleware
+├── drizzle/         # Schema + migrations
+├── shared/          # أنواع مشتركة
+└── .github/workflows/ci.yml
 ```
 
-للمزيد من التفاصيل، انظر [ARCHITECTURE.md](./ARCHITECTURE.md).
-
-## الصفحات الرئيسية
-
-### صفحات عامة
-
-- **الصفحة الرئيسية** (`/`): عرض المميزات والأسعار
-- **شروط الخدمة** (`/terms`): الشروط والأحكام
-- **سياسة الخصوصية** (`/privacy`): سياسة حماية البيانات
-
-### صفحات محمية
-
-- **لوحة التحكم** (`/dashboard`): عرض الإحصائيات والأنشطة
-- **إدارة الوكلاء** (`/agents`): إنشاء وتعديل الوكلاء
-- **اختبار الوكيل** (`/agents/:id/test`): واجهة اختبار تفاعلية
-- **مفاتيح API** (`/api-keys`): إدارة مفاتيح الوصول
-- **الفوترة** (`/billing`): إدارة الاشتراكات والفواتير
-- **الإعدادات** (`/settings`): إعدادات الحساب والأمان
-
-## API Endpoints
-
-جميع الـ endpoints مبنية باستخدام tRPC:
-
-### المصادقة
-```typescript
-trpc.auth.me.useQuery()              // الحصول على المستخدم الحالي
-trpc.auth.logout.useMutation()       // تسجيل الخروج
-```
-
-### الوكلاء
-```typescript
-trpc.agents.list.useQuery()          // قائمة الوكلاء
-trpc.agents.get.useQuery({ id })     // الحصول على وكيل
-trpc.agents.create.useMutation()     // إنشاء وكيل
-trpc.agents.update.useMutation()     // تحديث وكيل
-trpc.agents.delete.useMutation()     // حذف وكيل
-```
-
-### التنفيذات
-```typescript
-trpc.executions.list.useQuery()      // قائمة التنفيذات
-trpc.executions.create.useMutation() // تنفيذ جديد
-```
-
-### مفاتيح API
-```typescript
-trpc.apiKeys.list.useQuery()         // قائمة المفاتيح
-trpc.apiKeys.create.useMutation()    // إنشاء مفتاح
-```
+تفاصيل أكثر: [ARCHITECTURE.md](./ARCHITECTURE.md) · [SECURITY.md](./SECURITY.md)
 
 ## الاختبار
-
-تشغيل الاختبارات:
 
 ```bash
 pnpm test
 ```
 
-الاختبارات تغطي جميع الـ API endpoints والتحقق من الصحة.
+يشمل اختبارات ملكية الموارد وتوليد مفاتيح API.
 
-## النشر
+## الأمان
 
-### على Manus
+- مفاتيح API: SHA-256 فقط في قاعدة البيانات
+- عمليات الوكلاء/التنفيذات/الإشعارات مربوطة بـ `userId`
+- كوكي الجلسة: `httpOnly` + `secure` حسب HTTPS
+- حد جسم الطلب: 2MB
 
-1. تأكد من وجود checkpoint
-2. انقر على زر "Publish" في لوحة التحكم
-3. سيتم نشر التطبيق على النطاق المخصص
+## المصادقة
 
-### على خادم خارجي
-
-```bash
-# بناء التطبيق
-pnpm build
-
-# تشغيل الإنتاج
-pnpm start
-```
-
-## متغيرات البيئة
-
-يتم تعيين المتغيرات التالية تلقائياً:
-
-- `DATABASE_URL`: اتصال قاعدة البيانات
-- `JWT_SECRET`: مفتاح توقيع الجلسات
-- `VITE_APP_ID`: معرف تطبيق OAuth
-- `OAUTH_SERVER_URL`: خادم OAuth
-- `BUILT_IN_FORGE_API_KEY`: مفتاح API المدمج
-
-## الامتثال والأمان
-
-**GDPR:** امتثال كامل لحماية البيانات الشخصية.
-
-**AI Act:** الامتثال للوائح الاتحاد الأوروبي للذكاء الاصطناعي.
-
-**SSL/TLS:** تشفير جميع الاتصالات.
-
-**Role-based Access:** إدارة الأدوار والصلاحيات.
-
-## المساهمة
-
-نرحب بالمساهمات! يرجى:
-
-1. Fork المشروع
-2. إنشاء فرع للميزة الجديدة
-3. Commit التغييرات
-4. Push إلى الفرع
-5. فتح Pull Request
+الوضع الافتراضي يعتمد على **Manus OAuth**. للتشغيل المحلي تحتاج قيم `VITE_APP_ID` و `OAUTH_SERVER_URL` من بيئة Manus، أو توسيع طبقة المصادقة لاحقاً.
 
 ## الترخيص
 
-هذا المشروع مرخص تحت MIT License.
+MIT — انظر `package.json`
 
-## الدعم
+## المساهمة
 
-للمساعدة والدعم:
-
-- **البريد الإلكتروني:** support@agenticai.com
-- **الموقع:** https://agenticai.com
-- **الوثائق:** https://docs.agenticai.com
-
-## الخريطة الطريقية
-
-### المرحلة الحالية (Q1 2026)
-- ✅ لوحة تحكم أساسية
-- ✅ إدارة الوكلاء
-- ✅ اختبار الوكلاء
-- ✅ نظام الفوترة
-
-### المرحلة القادمة (Q2 2026)
-- 🔄 Multi-Agent Orchestration متقدمة
-- 🔄 Webhooks والإشعارات
-- 🔄 Advanced Analytics
-- 🔄 Team Collaboration
-
-### المرحلة المستقبلية (Q3-Q4 2026)
-- 📋 Custom Training Models
-- 📋 Real-time Monitoring
-- 📋 Audit Logs
-- 📋 Enterprise Features
-
----
-
-تم بناء هذا المشروع بـ ❤️ لتمكين الذكاء الاصطناعي المستقل.
+[CONTRIBUTING.md](./CONTRIBUTING.md)
