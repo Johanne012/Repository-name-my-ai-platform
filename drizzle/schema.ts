@@ -1,9 +1,7 @@
 import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, decimal, json, longtext } from "drizzle-orm/mysql-core";
-import { relations } from "drizzle-orm";
 
 /**
  * Core user table backing auth flow.
- * Extend this file with additional tables as your product grows.
  * Columns use camelCase to match both database fields and generated types.
  */
 export const users = mysqlTable("users", {
@@ -30,10 +28,10 @@ export const agents = mysqlTable("agents", {
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   systemPrompt: longtext("systemPrompt"),
-  model: varchar("model", { length: 100 }).default("gpt-4.1-mini").notNull(),
+  model: varchar("model", { length: 100 }).default("gpt-4o-mini").notNull(),
   status: mysqlEnum("status", ["active", "inactive", "archived"]).default("active").notNull(),
-  tools: json("tools"), // JSON array of tool configurations
-  config: json("config"), // Additional configuration
+  tools: json("tools"),
+  config: json("config"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -48,9 +46,9 @@ export const agentExecutions = mysqlTable("agentExecutions", {
   userId: int("userId").notNull(),
   input: longtext("input"),
   output: longtext("output"),
-  reactLogs: json("reactLogs"), // Reasoning & Acting logs
+  reactLogs: json("reactLogs"),
   status: mysqlEnum("status", ["pending", "running", "completed", "failed"]).default("pending").notNull(),
-  executionTime: int("executionTime"), // milliseconds
+  executionTime: int("executionTime"),
   tokensUsed: int("tokensUsed"),
   cost: decimal("cost", { precision: 10, scale: 6 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -99,7 +97,7 @@ export const usageTracking = mysqlTable("usageTracking", {
   tokensUsed: int("tokensUsed").default(0),
   apiCallsCount: int("apiCallsCount").default(0),
   costAccumulated: decimal("costAccumulated", { precision: 10, scale: 6 }).default("0"),
-  period: varchar("period", { length: 20 }), // e.g., "2026-02"
+  period: varchar("period", { length: 20 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -113,8 +111,8 @@ export const workflows = mysqlTable("workflows", {
   userId: int("userId").notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
-  agents: json("agents"), // Array of agent IDs and their order
-  config: json("config"), // Workflow configuration
+  agents: json("agents"),
+  config: json("config"),
   status: mysqlEnum("status", ["active", "inactive", "archived"]).default("active").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

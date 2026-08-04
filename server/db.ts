@@ -1,7 +1,22 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, agents, agentExecutions, apiKeys, subscriptions, usageTracking, workflows, workflowExecutions, InsertAgent, InsertAgentExecution, InsertApiKey, InsertSubscription, InsertUsageTracking } from "../drizzle/schema";
-import { ENV } from './_core/env';
+import {
+  InsertUser,
+  users,
+  agents,
+  agentExecutions,
+  apiKeys,
+  subscriptions,
+  usageTracking,
+  workflows,
+  InsertAgent,
+  InsertAgentExecution,
+  InsertApiKey,
+  InsertSubscription,
+  InsertUsageTracking,
+  InsertWorkflow,
+} from "../drizzle/schema";
+import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -56,8 +71,8 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       values.role = user.role;
       updateSet.role = user.role;
     } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
+      values.role = "admin";
+      updateSet.role = "admin";
     }
 
     if (!values.lastSignedIn) {
@@ -103,6 +118,18 @@ export async function getAgentById(agentId: number) {
   return result[0];
 }
 
+/** Get agent only if it belongs to the given user (prevents IDOR). */
+export async function getAgentByIdForUser(agentId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(agents)
+    .where(and(eq(agents.id, agentId), eq(agents.userId, userId)))
+    .limit(1);
+  return result[0];
+}
+
 export async function createAgent(data: InsertAgent) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -116,17 +143,57 @@ export async function updateAgent(agentId: number, data: Partial<InsertAgent>) {
   return db.update(agents).set(data).where(eq(agents.id, agentId));
 }
 
+/** Update agent only if owned by user. Returns undefined if not found / not owned. */
+export async function updateAgentForUser(
+  agentId: number,
+  userId: number,
+  data: Partial<InsertAgent>,
+) {
+  const existing = await getAgentByIdForUser(agentId, userId);
+  if (!existing) return undefined;
+  // Never allow changing ownership via update payload
+  const { userId: _uid, id: _id, ...safe } = data as Partial<InsertAgent> & {
+    userId?: number;
+    id?: number;
+  };
+  void _uid;
+  void _id;
+  return updateAgent(agentId, safe);
+}
+
 export async function deleteAgent(agentId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   return db.delete(agents).where(eq(agents.id, agentId));
 }
 
+/** Delete agent only if owned by user. */
+export async function deleteAgentForUser(agentId: number, userId: number) {
+  const existing = await getAgentByIdForUser(agentId, userId);
+  if (!existing) return undefined;
+  return deleteAgent(agentId);
+}
+
 // Execution queries
 export async function getAgentExecutions(agentId: number, limit = 50) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(agentExecutions).where(eq(agentExecutions.agentId, agentId)).limit(limit);
+  return db
+    .select()
+    .from(agentExecutions)
+    .where(eq(agentExecutions.agentId, agentId))
+    .limit(limit);
+}
+
+/** List executions for an agent only if the agent belongs to the user. */
+export async function getAgentExecutionsForUser(
+  agentId: number,
+  userId: number,
+  limit = 50,
+) {
+  const agent = await getAgentByIdForUser(agentId, userId);
+  if (!agent) return null;
+  return getAgentExecutions(agentId, limit);
 }
 
 export async function createExecution(data: InsertAgentExecution) {
@@ -153,7 +220,11 @@ export async function getApiKeyByKey(key: string) {
 export async function getUserSubscription(userId: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).limit(1);
+  const result = await db
+    .select()
+    .from(subscriptions)
+    .where(eq(subscriptions.userId, userId))
+    .limit(1);
   return result[0];
 }
 
@@ -168,6 +239,24 @@ export async function createApiKey(data: InsertApiKey) {
 export async function getUserUsageTracking(userId: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(usageTracking).where(eq(usageTracking.userId, userId)).limit(1);
+  const result = await db
+    .select()
+    .from(usageTracking)
+    .where(eq(usageTracking.userId, userId))
+    .limit(1);
   return result[0];
+}
+
+// Workflow queries
+export async function createWorkflow(data: InsertWorkflow) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(workflows).values(data);
+  return result;
+}
+
+export async function getUserWorkflows(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(workflows).where(eq(workflows.userId, userId));
 }
