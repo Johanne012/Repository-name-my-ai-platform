@@ -1,34 +1,42 @@
-import React, { useState } from 'react';
-import DashboardLayout from '@/components/DashboardLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Plus, Copy, Trash2, Eye, EyeOff } from 'lucide-react';
-import { toast } from 'sonner';
-import { trpc } from '@/lib/trpc';
-
-interface ApiKey {
-  id: number;
-  name: string;
-  key: string;
-  createdAt: Date;
-  lastUsed: Date | null;
-  isActive: boolean;
-}
+import React, { useState } from "react";
+import DashboardLayout from "@/components/DashboardLayout";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Plus, Copy, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+import { trpc } from "@/lib/trpc";
 
 export default function ApiKeys() {
   const [open, setOpen] = useState(false);
-  const [keyName, setKeyName] = useState('');
-  const [showKeys, setShowKeys] = useState<{ [key: number]: boolean }>({});
+  const [keyName, setKeyName] = useState("");
+  const [justCreatedKey, setJustCreatedKey] = useState<string | null>(null);
 
   const { data: apiKeys, isLoading, refetch } = trpc.apiKeys.list.useQuery();
   const createKey = trpc.apiKeys.create.useMutation({
+    onSuccess: (data) => {
+      setJustCreatedKey(data.rawKey);
+      toast.success("تم إنشاء مفتاح API — احفظه الآن، لن يظهر مجدداً");
+      setKeyName("");
+      refetch();
+    },
+    onError: (error) => {
+      toast.error(`خطأ: ${error.message}`);
+    },
+  });
+
+  const revokeKey = trpc.apiKeys.revoke.useMutation({
     onSuccess: () => {
-      toast.success('تم إنشاء مفتاح API بنجاح');
-      setOpen(false);
-      setKeyName('');
+      toast.success("تم إلغاء المفتاح");
       refetch();
     },
     onError: (error) => {
@@ -39,34 +47,35 @@ export default function ApiKeys() {
   const handleCreateKey = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!keyName.trim()) {
-      toast.error('يرجى إدخال اسم المفتاح');
+      toast.error("يرجى إدخال اسم المفتاح");
       return;
     }
+    setJustCreatedKey(null);
     await createKey.mutateAsync({ name: keyName });
   };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    toast.success('تم نسخ المفتاح');
-  };
-
-  const toggleShowKey = (id: number) => {
-    setShowKeys((prev) => ({
-      ...prev,
-      [id]: !prev[id],
-    }));
+    toast.success("تم نسخ المفتاح");
   };
 
   return (
     <DashboardLayout title="مفاتيح API">
       <div className="space-y-6">
-        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold">مفاتيح API</h3>
-            <p className="text-sm text-slate-500">إدارة مفاتيح الوصول إلى API</p>
+            <p className="text-sm text-slate-500">
+              المفتاح الكامل يُعرض مرة واحدة فقط عند الإنشاء (يُخزَّن كـ hash في الخادم)
+            </p>
           </div>
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog
+            open={open}
+            onOpenChange={(v) => {
+              setOpen(v);
+              if (!v) setJustCreatedKey(null);
+            }}
+          >
             <DialogTrigger asChild>
               <Button className="gap-2">
                 <Plus size={20} />
@@ -77,28 +86,56 @@ export default function ApiKeys() {
               <DialogHeader>
                 <DialogTitle>إنشاء مفتاح API جديد</DialogTitle>
                 <DialogDescription>
-                  أنشئ مفتاح API جديد للوصول إلى الخدمات
+                  بعد الإنشاء انسخ المفتاح فوراً — لن نتمكن من إظهاره لاحقاً.
                 </DialogDescription>
               </DialogHeader>
-              <form onSubmit={handleCreateKey} className="space-y-4">
-                <div>
-                  <Label htmlFor="keyName">اسم المفتاح</Label>
-                  <Input
-                    id="keyName"
-                    placeholder="مثال: مفتاح الإنتاج"
-                    value={keyName}
-                    onChange={(e) => setKeyName(e.target.value)}
-                  />
+              {justCreatedKey ? (
+                <div className="space-y-3">
+                  <p className="text-sm text-amber-700 bg-amber-50 p-2 rounded">
+                    احفظ هذا المفتاح الآن. لن يظهر مرة أخرى.
+                  </p>
+                  <code className="block bg-slate-100 p-3 rounded text-sm font-mono break-all">
+                    {justCreatedKey}
+                  </code>
+                  <Button
+                    type="button"
+                    className="w-full"
+                    onClick={() => copyToClipboard(justCreatedKey)}
+                  >
+                    نسخ المفتاح
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => {
+                      setOpen(false);
+                      setJustCreatedKey(null);
+                    }}
+                  >
+                    تم الحفظ
+                  </Button>
                 </div>
-                <Button type="submit" className="w-full" disabled={createKey.isPending}>
-                  {createKey.isPending ? 'جاري الإنشاء...' : 'إنشاء المفتاح'}
-                </Button>
-              </form>
+              ) : (
+                <form onSubmit={handleCreateKey} className="space-y-4">
+                  <div>
+                    <Label htmlFor="keyName">اسم المفتاح</Label>
+                    <Input
+                      id="keyName"
+                      placeholder="مثال: مفتاح الإنتاج"
+                      value={keyName}
+                      onChange={(e) => setKeyName(e.target.value)}
+                    />
+                  </div>
+                  <Button type="submit" className="w-full" disabled={createKey.isPending}>
+                    {createKey.isPending ? "جاري الإنشاء..." : "إنشاء المفتاح"}
+                  </Button>
+                </form>
+              )}
             </DialogContent>
           </Dialog>
         </div>
 
-        {/* API Keys List */}
         {isLoading ? (
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
@@ -111,49 +148,50 @@ export default function ApiKeys() {
           </div>
         ) : apiKeys && apiKeys.length > 0 ? (
           <div className="space-y-3">
-            {apiKeys.map((key: ApiKey) => (
+            {apiKeys.map((key) => (
               <Card key={key.id}>
                 <CardContent className="pt-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1 min-w-0">
                       <h4 className="font-semibold">{key.name}</h4>
-                      <div className="flex items-center gap-2 mt-2">
-                        <code className="bg-slate-100 px-3 py-1 rounded text-sm font-mono">
-                          {showKeys[key.id] ? key.key : key.key.substring(0, 10) + '...'}
-                        </code>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => toggleShowKey(key.id)}
-                          className="h-8 w-8 p-0"
-                        >
-                          {showKeys[key.id] ? <EyeOff size={16} /> : <Eye size={16} />}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => copyToClipboard(key.key)}
-                          className="h-8 w-8 p-0"
-                        >
-                          <Copy size={16} />
-                        </Button>
-                      </div>
+                      <code className="bg-slate-100 px-3 py-1 rounded text-sm font-mono inline-block mt-2">
+                        {key.keyPrefix}…
+                      </code>
                       <p className="text-xs text-slate-500 mt-2">
-                        تم الإنشاء: {new Date(key.createdAt).toLocaleDateString('ar-SA')}
-                        {key.lastUsed && ` • آخر استخدام: ${new Date(key.lastUsed).toLocaleDateString('ar-SA')}`}
+                        تم الإنشاء:{" "}
+                        {key.createdAt
+                          ? new Date(key.createdAt).toLocaleDateString("ar-SA")
+                          : "—"}
+                        {key.lastUsed &&
+                          ` • آخر استخدام: ${new Date(key.lastUsed).toLocaleDateString("ar-SA")}`}
                       </p>
                     </div>
-                    <div className="flex gap-2">
-                      <span className={`px-3 py-1 text-xs rounded-full ${
-                        key.isActive
-                          ? 'bg-green-100 text-green-700'
-                          : 'bg-slate-100 text-slate-700'
-                      }`}>
-                        {key.isActive ? 'نشط' : 'معطل'}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span
+                        className={`px-3 py-1 text-xs rounded-full ${
+                          key.isActive
+                            ? "bg-green-100 text-green-700"
+                            : "bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {key.isActive ? "نشط" : "ملغى"}
                       </span>
-                      <Button size="sm" variant="destructive" className="gap-2">
-                        <Trash2 size={16} />
-                      </Button>
+                      {key.isActive && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          className="gap-2"
+                          disabled={revokeKey.isPending}
+                          onClick={() => {
+                            if (confirm("إلغاء هذا المفتاح؟ لن يعمل بعدها.")) {
+                              revokeKey.mutate({ id: key.id });
+                            }
+                          }}
+                        >
+                          <Trash2 size={16} />
+                          إلغاء
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -171,7 +209,6 @@ export default function ApiKeys() {
           </Card>
         )}
 
-        {/* Documentation */}
         <Card>
           <CardHeader>
             <CardTitle>وثائق API</CardTitle>
@@ -181,15 +218,15 @@ export default function ApiKeys() {
             <div>
               <h4 className="font-semibold mb-2">المصادقة</h4>
               <code className="block bg-slate-100 p-3 rounded text-sm overflow-x-auto">
-                curl -H "Authorization: Bearer YOUR_API_KEY" https://api.agenticai.com/v1/agents
+                {`curl -H "Authorization: Bearer YOUR_API_KEY" https://YOUR_HOST/api/...`}
               </code>
             </div>
             <div>
               <h4 className="font-semibold mb-2">الأمان</h4>
               <ul className="list-disc list-inside space-y-1 text-sm text-slate-600">
                 <li>لا تشارك مفاتيحك مع أحد</li>
-                <li>احذف المفاتيح القديمة التي لا تستخدمها</li>
-                <li>استخدم مفاتيح منفصلة للإنتاج والاختبار</li>
+                <li>ألغِ المفاتيح القديمة التي لا تستخدمها</li>
+                <li>الخادم يخزّن hash فقط — لا يمكن استرجاع المفتاح الكامل لاحقاً</li>
               </ul>
             </div>
           </CardContent>

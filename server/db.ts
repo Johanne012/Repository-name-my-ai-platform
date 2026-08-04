@@ -1,11 +1,24 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, agents, agentExecutions, apiKeys, subscriptions, usageTracking, workflows, workflowExecutions, InsertAgent, InsertAgentExecution, InsertApiKey, InsertSubscription, InsertUsageTracking } from "../drizzle/schema";
-import { ENV } from './_core/env';
+import {
+  InsertUser,
+  users,
+  agents,
+  agentExecutions,
+  apiKeys,
+  subscriptions,
+  usageTracking,
+  workflows,
+  InsertAgent,
+  InsertAgentExecution,
+  InsertApiKey,
+  InsertWorkflow,
+} from "../drizzle/schema";
+import { ENV } from "./_core/env";
+import { hashApiKey } from "./apiKeys";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
@@ -56,8 +69,8 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       values.role = user.role;
       updateSet.role = user.role;
     } else if (user.openId === ENV.ownerOpenId) {
-      values.role = 'admin';
-      updateSet.role = 'admin';
+      values.role = "admin";
+      updateSet.role = "admin";
     }
 
     if (!values.lastSignedIn) {
@@ -85,11 +98,9 @@ export async function getUserByOpenId(openId: string) {
   }
 
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
   return result.length > 0 ? result[0] : undefined;
 }
 
-// Agent queries
 export async function getUserAgents(userId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -103,11 +114,21 @@ export async function getAgentById(agentId: number) {
   return result[0];
 }
 
+export async function getAgentByIdForUser(agentId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db
+    .select()
+    .from(agents)
+    .where(and(eq(agents.id, agentId), eq(agents.userId, userId)))
+    .limit(1);
+  return result[0];
+}
+
 export async function createAgent(data: InsertAgent) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(agents).values(data);
-  return result;
+  return db.insert(agents).values(data);
 }
 
 export async function updateAgent(agentId: number, data: Partial<InsertAgent>) {
@@ -116,17 +137,52 @@ export async function updateAgent(agentId: number, data: Partial<InsertAgent>) {
   return db.update(agents).set(data).where(eq(agents.id, agentId));
 }
 
+export async function updateAgentForUser(
+  agentId: number,
+  userId: number,
+  data: Partial<InsertAgent>,
+) {
+  const existing = await getAgentByIdForUser(agentId, userId);
+  if (!existing) return undefined;
+  const { userId: _uid, id: _id, ...safe } = data as Partial<InsertAgent> & {
+    userId?: number;
+    id?: number;
+  };
+  void _uid;
+  void _id;
+  return updateAgent(agentId, safe);
+}
+
 export async function deleteAgent(agentId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   return db.delete(agents).where(eq(agents.id, agentId));
 }
 
-// Execution queries
+export async function deleteAgentForUser(agentId: number, userId: number) {
+  const existing = await getAgentByIdForUser(agentId, userId);
+  if (!existing) return undefined;
+  return deleteAgent(agentId);
+}
+
 export async function getAgentExecutions(agentId: number, limit = 50) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(agentExecutions).where(eq(agentExecutions.agentId, agentId)).limit(limit);
+  return db
+    .select()
+    .from(agentExecutions)
+    .where(eq(agentExecutions.agentId, agentId))
+    .limit(limit);
+}
+
+export async function getAgentExecutionsForUser(
+  agentId: number,
+  userId: number,
+  limit = 50,
+) {
+  const agent = await getAgentByIdForUser(agentId, userId);
+  if (!agent) return null;
+  return getAgentExecutions(agentId, limit);
 }
 
 export async function createExecution(data: InsertAgentExecution) {
@@ -135,39 +191,91 @@ export async function createExecution(data: InsertAgentExecution) {
   return db.insert(agentExecutions).values(data);
 }
 
-// API Key queries
-export async function getUserApiKeys(userId: number) {
+/** List API keys for UI — never expose full hash as if it were the raw key. */
+export async function getUserApiKeysSafe(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(apiKeys).where(eq(apiKeys.userId, userId));
+  const rows = await db.select().from(apiKeys).where(eq(apiKeys.userId, userId));
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    keyPrefix: row.keyPrefix || "sk_****",
+    isActive: row.isActive,
+    createdAt: row.createdAt,
+    lastUsed: row.lastUsed,
+    expiresAt: row.expiresAt,
+  }));
 }
 
-export async function getApiKeyByKey(key: string) {
+export async function getApiKeyByRawKey(rawKey: string) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(apiKeys).where(eq(apiKeys.key, key)).limit(1);
+  const keyHash = hashApiKey(rawKey);
+  const result = await db
+    .select()
+    .from(apiKeys)
+    .where(and(eq(apiKeys.key, keyHash), eq(apiKeys.isActive, true)))
+    .limit(1);
   return result[0];
 }
 
-// Subscription queries
+/** @deprecated use getApiKeyByRawKey — looks up by hash */
+export async function getApiKeyByKey(key: string) {
+  return getApiKeyByRawKey(key);
+}
+
 export async function getUserSubscription(userId: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId)).limit(1);
+  const result = await db
+    .select()
+    .from(subscriptions)
+    .where(eq(subscriptions.userId, userId))
+    .limit(1);
   return result[0];
 }
 
-// API Key creation
 export async function createApiKey(data: InsertApiKey) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   return db.insert(apiKeys).values(data);
 }
 
-// Usage tracking queries
+export async function revokeApiKeyForUser(keyId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await db
+    .select()
+    .from(apiKeys)
+    .where(and(eq(apiKeys.id, keyId), eq(apiKeys.userId, userId)))
+    .limit(1);
+  if (!existing[0]) return undefined;
+  await db
+    .update(apiKeys)
+    .set({ isActive: false })
+    .where(and(eq(apiKeys.id, keyId), eq(apiKeys.userId, userId)));
+  return { success: true };
+}
+
 export async function getUserUsageTracking(userId: number) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(usageTracking).where(eq(usageTracking.userId, userId)).limit(1);
+  const result = await db
+    .select()
+    .from(usageTracking)
+    .where(eq(usageTracking.userId, userId))
+    .limit(1);
   return result[0];
+}
+
+export async function createWorkflow(data: InsertWorkflow) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db.insert(workflows).values(data);
+}
+
+export async function getUserWorkflows(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(workflows).where(eq(workflows.userId, userId));
 }
