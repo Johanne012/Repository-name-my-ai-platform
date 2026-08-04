@@ -1,17 +1,12 @@
-import { randomBytes } from "node:crypto";
 import { COOKIE_NAME } from "@shared/const";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { generateSecureApiKey } from "./apiKeys";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
 import * as db from "./db";
 import { stripeRouter } from "./stripe-routers";
-
-function generateApiKey(): string {
-  // cryptographically secure key (sk_ + 48 hex chars = 24 bytes)
-  return `sk_${randomBytes(24).toString("hex")}`;
-}
 
 export const appRouter = router({
   system: systemRouter,
@@ -131,21 +126,36 @@ export const appRouter = router({
 
   apiKeys: router({
     list: protectedProcedure.query(async ({ ctx }) => {
-      return db.getUserApiKeys(ctx.user.id);
+      return db.getUserApiKeysSafe(ctx.user.id);
     }),
 
     create: protectedProcedure
       .input(z.object({ name: z.string().min(1).max(255) }))
       .mutation(async ({ ctx, input }) => {
-        const key = generateApiKey();
+        const { rawKey, keyPrefix, keyHash } = generateSecureApiKey();
         await db.createApiKey({
           userId: ctx.user.id,
-          key,
+          key: keyHash,
+          keyPrefix,
           name: input.name,
           isActive: true,
         });
-        // Return raw key once — client must store it
-        return { key, name: input.name };
+        return {
+          rawKey,
+          keyPrefix,
+          name: input.name,
+          warning: "Save this key now. It will not be shown again.",
+        };
+      }),
+
+    revoke: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const result = await db.revokeApiKeyForUser(input.id, ctx.user.id);
+        if (!result) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "API key not found" });
+        }
+        return result;
       }),
   }),
 
@@ -190,7 +200,6 @@ export const appRouter = router({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        // Validate that referenced agents belong to the user
         if (input.nodes?.length) {
           for (const node of input.nodes) {
             const agent = await db.getAgentByIdForUser(node.agentId, ctx.user.id);
@@ -233,7 +242,6 @@ export const appRouter = router({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        // Ownership check — full orchestration engine still pending
         for (const node of input.nodes) {
           const agent = await db.getAgentByIdForUser(node.agentId, ctx.user.id);
           if (!agent) {

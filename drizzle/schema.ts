@@ -2,7 +2,6 @@ import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, decimal,
 
 /**
  * Core user table backing auth flow.
- * Columns use camelCase to match both database fields and generated types.
  */
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -21,7 +20,6 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// AI Agents table
 export const agents = mysqlTable("agents", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
@@ -39,7 +37,6 @@ export const agents = mysqlTable("agents", {
 export type Agent = typeof agents.$inferSelect;
 export type InsertAgent = typeof agents.$inferInsert;
 
-// Agent Executions table
 export const agentExecutions = mysqlTable("agentExecutions", {
   id: int("id").autoincrement().primaryKey(),
   agentId: int("agentId").notNull(),
@@ -58,11 +55,15 @@ export const agentExecutions = mysqlTable("agentExecutions", {
 export type AgentExecution = typeof agentExecutions.$inferSelect;
 export type InsertAgentExecution = typeof agentExecutions.$inferInsert;
 
-// API Keys table
+/**
+ * API keys: `key` stores SHA-256 hash only. `keyPrefix` is safe to show in UI.
+ * Raw key is returned once at creation and never stored.
+ */
 export const apiKeys = mysqlTable("apiKeys", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
-  key: varchar("key", { length: 255 }).notNull().unique(),
+  key: varchar("key", { length: 255 }).notNull().unique(), // sha256 hash
+  keyPrefix: varchar("keyPrefix", { length: 16 }).notNull().default("sk_"),
   name: varchar("name", { length: 255 }).notNull(),
   lastUsed: timestamp("lastUsed"),
   isActive: boolean("isActive").default(true).notNull(),
@@ -73,7 +74,6 @@ export const apiKeys = mysqlTable("apiKeys", {
 export type ApiKey = typeof apiKeys.$inferSelect;
 export type InsertApiKey = typeof apiKeys.$inferInsert;
 
-// Subscriptions table
 export const subscriptions = mysqlTable("subscriptions", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull().unique(),
@@ -89,7 +89,6 @@ export const subscriptions = mysqlTable("subscriptions", {
 export type Subscription = typeof subscriptions.$inferSelect;
 export type InsertSubscription = typeof subscriptions.$inferInsert;
 
-// Usage Tracking table
 export const usageTracking = mysqlTable("usageTracking", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
@@ -105,7 +104,6 @@ export const usageTracking = mysqlTable("usageTracking", {
 export type UsageTracking = typeof usageTracking.$inferSelect;
 export type InsertUsageTracking = typeof usageTracking.$inferInsert;
 
-// Multi-Agent Workflows table
 export const workflows = mysqlTable("workflows", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
@@ -121,7 +119,6 @@ export const workflows = mysqlTable("workflows", {
 export type Workflow = typeof workflows.$inferSelect;
 export type InsertWorkflow = typeof workflows.$inferInsert;
 
-// Workflow Executions table
 export const workflowExecutions = mysqlTable("workflowExecutions", {
   id: int("id").autoincrement().primaryKey(),
   workflowId: int("workflowId").notNull(),
@@ -138,7 +135,6 @@ export const workflowExecutions = mysqlTable("workflowExecutions", {
 export type WorkflowExecution = typeof workflowExecutions.$inferSelect;
 export type InsertWorkflowExecution = typeof workflowExecutions.$inferInsert;
 
-// Notifications table
 export const notifications = mysqlTable("notifications", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
