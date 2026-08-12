@@ -4,10 +4,16 @@
   "installCommand": "pnpm install",
   "buildCommand": "pnpm run build",
   "outputDirectory": "dist/public",
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": "{server/**,shared/**,dist/public/**}",
+      "maxDuration": 30
+    }
+  },
   "rewrites": [
     { "source": "/health", "destination": "/api" },
-    { "source": "/api/trpc/(.*)", "destination": "/api" },
-    { "source": "/api/oauth/(.*)", "destination": "/api" },
-    { "source": "/((?!api/|assets/).*)", "destination": "/index.html" }
+    { "source": "/api/trpc/:path*", "destination": "/api" },
+    { "source": "/api/oauth/:path*", "destination": "/api" },
+    { "source": "/((?!api(?:/|$)|assets/).*)", "destination": "/index.html" }
   ]
 }
