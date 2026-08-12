@@ -34,8 +34,7 @@ function resolvePublicDir(): string {
   const candidates = [
     path.resolve(process.cwd(), "dist", "public"),
     path.resolve(process.cwd(), "public"),
-    path.resolve(import.meta.dirname, "..", "..", "dist", "public"),
-    path.resolve(import.meta.dirname, "public"),
+    path.resolve(process.cwd(), "dist"),
   ];
   for (const dir of candidates) {
     if (fs.existsSync(path.join(dir, "index.html"))) {
