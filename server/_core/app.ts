@@ -44,6 +44,18 @@ function resolvePublicDir(): string {
   return candidates[0];
 }
 
+function readiness() {
+  return {
+    database: Boolean(process.env.DATABASE_URL),
+    jwt: Boolean(process.env.JWT_SECRET),
+    oauth: Boolean(process.env.OAUTH_SERVER_URL),
+    stripe: Boolean(process.env.STRIPE_SECRET_KEY),
+    forge: Boolean(
+      process.env.BUILT_IN_FORGE_API_URL && process.env.BUILT_IN_FORGE_API_KEY,
+    ),
+  };
+}
+
 const app = express();
 
 app.disable("x-powered-by");
@@ -53,10 +65,15 @@ app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ limit: "2mb", extended: true }));
 
 app.get("/health", (_req, res) => {
-  res.json({
-    status: "ok",
+  const env = readiness();
+  const ready = env.database && env.jwt;
+  res.status(ready ? 200 : 503).json({
+    status: ready ? "ok" : "degraded",
     service: "agentic-ai",
+    version: process.env.npm_package_version || "1.0.0",
     time: new Date().toISOString(),
+    runtime: process.env.VERCEL ? "vercel-serverless" : "node",
+    env,
   });
 });
 
@@ -70,8 +87,8 @@ app.use(
   }),
 );
 
-// Production static + SPA fallback (used on Vercel and local `pnpm start`)
-if (process.env.NODE_ENV === "production") {
+// Production static + SPA fallback (local `pnpm start`; on Vercel CDN serves static)
+if (process.env.NODE_ENV === "production" && !process.env.VERCEL) {
   const distPath = resolvePublicDir();
   if (!fs.existsSync(distPath)) {
     console.error(
