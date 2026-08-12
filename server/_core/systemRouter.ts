@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { notifyOwner } from "./notification";
+import { getProviderHealth, listAvailableProviders } from "./llm";
 import { adminProcedure, publicProcedure, router } from "./trpc";
 
 function readiness() {
@@ -10,6 +11,16 @@ function readiness() {
     stripe: Boolean(process.env.STRIPE_SECRET_KEY),
     forge: Boolean(
       process.env.BUILT_IN_FORGE_API_URL && process.env.BUILT_IN_FORGE_API_KEY,
+    ),
+    gemini: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY),
+    groq: Boolean(process.env.GROQ_API_KEY),
+    openrouter: Boolean(process.env.OPENROUTER_API_KEY),
+    nvidia: Boolean(process.env.NVIDIA_API_KEY),
+    cerebras: Boolean(process.env.CEREBRAS_API_KEY),
+    mistral: Boolean(process.env.MISTRAL_API_KEY),
+    githubModels: Boolean(process.env.GITHUB_TOKEN || process.env.GH_TOKEN),
+    cloudflare: Boolean(
+      process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN,
     ),
   };
 }
@@ -30,15 +41,39 @@ export const systemRouter = router({
 
   status: publicProcedure.query(() => {
     const env = readiness();
+    const llmProviders = listAvailableProviders();
+    const hasAnyLlm =
+      env.forge ||
+      env.gemini ||
+      env.groq ||
+      env.openrouter ||
+      env.nvidia ||
+      env.cerebras ||
+      env.mistral ||
+      env.githubModels ||
+      env.cloudflare;
+
     const ready = env.database && env.jwt;
     return {
       ok: ready,
-      status: ready ? "ok" : "degraded",
+      status: ready ? (hasAnyLlm ? "ok" : "degraded") : "degraded",
       service: "agentic-ai",
       version: process.env.npm_package_version || "1.0.0",
       runtime: process.env.VERCEL ? "vercel-serverless" : "node",
       time: new Date().toISOString(),
       env,
+      llm: {
+        configured: llmProviders.length,
+        providers: llmProviders,
+      },
+    } as const;
+  }),
+
+  /** Detailed adaptive ranking + circuit-breaker state for every LLM provider */
+  llmHealth: publicProcedure.query(() => {
+    return {
+      time: new Date().toISOString(),
+      providers: getProviderHealth(),
     } as const;
   }),
 
