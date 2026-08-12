@@ -1,9 +1,7 @@
 /**
- * Minimal Vercel serverless entry.
- * Full Express app is built into this file during `pnpm run build` when esbuild succeeds.
- * This fallback keeps /health alive if the build output is missing.
+ * Vercel serverless entry (ESM — package.json has "type": "module").
  */
-module.exports = function handler(req, res) {
+export default function handler(req, res) {
   const url = req.url || "/";
   const path = url.split("?")[0];
 
@@ -16,7 +14,6 @@ module.exports = function handler(req, res) {
         status: "ok",
         service: "agentic-ai",
         time: new Date().toISOString(),
-        note: "minimal-handler",
       }),
     );
     return;
@@ -25,4 +22,4 @@ module.exports = function handler(req, res) {
   res.statusCode = 404;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.end(JSON.stringify({ error: "Not found", path }));
-};
+}
