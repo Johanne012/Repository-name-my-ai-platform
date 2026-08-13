@@ -1,16 +1,18 @@
-import React, { useState, useRef, useEffect } from 'react';
-import DashboardLayout from '@/components/DashboardLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Send, Copy, Download } from 'lucide-react';
-import { toast } from 'sonner';
+import React, { useState, useRef, useEffect } from "react";
+import DashboardLayout from "@/components/DashboardLayout";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Send, Copy, Download } from "lucide-react";
+import { toast } from "sonner";
+import { trpc } from "@/lib/trpc";
 
 interface Message {
   id: string;
-  role: 'user' | 'assistant' | 'system';
+  role: "user" | "assistant" | "system";
   content: string;
   timestamp: Date;
+  meta?: string;
 }
 
 interface ReActLog {
@@ -22,106 +24,187 @@ interface ReActLog {
 
 export default function AgentTest() {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [reactLogs, setReactLogs] = useState<ReActLog[]>([]);
-  const [showReactLogs, setShowReactLogs] = useState(false);
+  const [agentId, setAgentId] = useState<number | undefined>(undefined);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const { data: agents } = trpc.agents.list.useQuery(undefined, {
+    retry: false,
+  });
+
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
+  useEffect(() => {
+    if (agents && agents.length > 0 && agentId === undefined) {
+      setAgentId(agents[0].id);
+    }
+  }, [agents, agentId]);
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || isLoading) return;
 
+    const userText = input.trim();
     const userMessage: Message = {
       id: Date.now().toString(),
-      role: 'user',
-      content: input,
+      role: "user",
+      content: userText,
       timestamp: new Date(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setInput('');
+    setInput("");
     setIsLoading(true);
+    setReactLogs([
+      {
+        step: 1,
+        thought: "إرسال الطلب إلى محرك AG-UI / multi-provider LLM",
+        action: "POST /api/ag-ui/run",
+        observation: "جاري الانتظار...",
+      },
+    ]);
 
-    // Simulate agent response
-    setTimeout(() => {
+    try {
+      const body: Record<string, unknown> = {
+        messages: [{ role: "user", content: userText }],
+      };
+      if (agentId) body.agentId = agentId;
+
+      const res = await fetch("/api/ag-ui/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        credentials: "include",
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || data.ok === false) {
+        const errMsg =
+          data.error ||
+          data.message ||
+          `فشل الطلب (${res.status}). تأكد من إعداد مفاتيح LLM على Vercel.`;
+        throw new Error(errMsg);
+      }
+
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: `تم استقبال طلبك: "${input}". جاري معالجة الطلب...`,
+        role: "assistant",
+        content: data.output || "(لا يوجد رد نصي)",
         timestamp: new Date(),
+        meta: [data.provider, data.model, data.latencyMs ? `${data.latencyMs}ms` : null]
+          .filter(Boolean)
+          .join(" · "),
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
-
-      // Simulate ReAct logs
       setReactLogs([
         {
           step: 1,
-          thought: 'يجب أن أفهم الطلب أولاً',
-          action: 'تحليل النص',
-          observation: 'الطلب واضح ومفهوم',
+          thought: "تم اختيار مزود LLM تلقائياً",
+          action: `provider=${data.provider || "?"}`,
+          observation: data.model || "",
         },
         {
           step: 2,
-          thought: 'الآن سأبحث عن المعلومات',
-          action: 'البحث في قاعدة البيانات',
-          observation: 'تم العثور على 5 نتائج',
-        },
-        {
-          step: 3,
-          thought: 'سأقوم بتجميع النتائج',
-          action: 'معالجة النتائج',
-          observation: 'تم تجميع النتائج بنجاح',
+          thought: "اكتمل التشغيل",
+          action: "RUN_FINISHED",
+          observation: data.latencyMs
+            ? `الزمن ${data.latencyMs}ms · tokens=${data.tokensUsed ?? "?"}`
+            : "تم",
         },
       ]);
-
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: (Date.now() + 2).toString(),
+          role: "system",
+          content: `خطأ: ${msg}`,
+          timestamp: new Date(),
+        },
+      ]);
+      setReactLogs([
+        {
+          step: 1,
+          thought: "فشل التشغيل",
+          action: "error",
+          observation: msg,
+        },
+      ]);
+      toast.error(msg.slice(0, 120));
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    toast.success('تم النسخ');
+    toast.success("تم النسخ");
   };
 
   const downloadLogs = () => {
     const content = JSON.stringify(reactLogs, null, 2);
-    const element = document.createElement('a');
-    element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(content));
-    element.setAttribute('download', 'react-logs.json');
-    element.style.display = 'none';
+    const element = document.createElement("a");
+    element.setAttribute(
+      "href",
+      "data:text/plain;charset=utf-8," + encodeURIComponent(content),
+    );
+    element.setAttribute("download", "react-logs.json");
+    element.style.display = "none";
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
-    toast.success('تم تحميل السجلات');
+    toast.success("تم تحميل السجلات");
   };
 
   return (
     <DashboardLayout title="اختبار الوكيل">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-200px)]">
-        {/* Chat Interface */}
         <Card className="lg:col-span-2 flex flex-col">
           <CardHeader>
-            <CardTitle>واجهة الاختبار</CardTitle>
-            <CardDescription>اختبر الوكيل مباشرة هنا</CardDescription>
+            <CardTitle>واجهة الاختبار (حقيقية)</CardTitle>
+            <CardDescription>
+              تتصل بمحرك AG-UI و multi-provider LLM على الخادم
+            </CardDescription>
+            {agents && agents.length > 0 && (
+              <div className="pt-2">
+                <label className="text-xs text-slate-500 block mb-1">الوكيل</label>
+                <select
+                  className="w-full border rounded-md px-2 py-1.5 text-sm bg-white"
+                  value={agentId ?? ""}
+                  onChange={(e) =>
+                    setAgentId(e.target.value ? Number(e.target.value) : undefined)
+                  }
+                >
+                  <option value="">بدون وكيل (افتراضي النظام)</option>
+                  {agents.map((a: any) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name} (#{a.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
           </CardHeader>
           <CardContent className="flex-1 flex flex-col overflow-hidden">
-            {/* Messages Area */}
             <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-4">
               {messages.length === 0 ? (
                 <div className="flex items-center justify-center h-full text-slate-500">
                   <div className="text-center">
-                    <p className="text-lg font-medium mb-2">ابدأ محادثة جديدة</p>
-                    <p className="text-sm">أرسل رسالة للبدء في اختبار الوكيل</p>
+                    <p className="text-lg font-medium mb-2">ابدأ محادثة حقيقية</p>
+                    <p className="text-sm">
+                      يلزم مفتاح LLM واحد على الأقل في Vercel (مثل GEMINI_API_KEY)
+                    </p>
                   </div>
                 </div>
               ) : (
@@ -129,19 +212,24 @@ export default function AgentTest() {
                   <div
                     key={message.id}
                     className={`flex ${
-                      message.role === 'user' ? 'justify-end' : 'justify-start'
+                      message.role === "user" ? "justify-end" : "justify-start"
                     }`}
                   >
                     <div
                       className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                        message.role === 'user'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-slate-200 text-slate-900'
+                        message.role === "user"
+                          ? "bg-blue-600 text-white"
+                          : message.role === "system"
+                            ? "bg-red-50 text-red-800 border border-red-200"
+                            : "bg-slate-200 text-slate-900"
                       }`}
                     >
-                      <p className="text-sm">{message.content}</p>
+                      <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                      {message.meta && (
+                        <p className="text-xs mt-1 opacity-70">{message.meta}</p>
+                      )}
                       <p className="text-xs mt-1 opacity-70">
-                        {message.timestamp.toLocaleTimeString('ar-SA')}
+                        {message.timestamp.toLocaleTimeString("ar-SA")}
                       </p>
                     </div>
                   </div>
@@ -161,7 +249,6 @@ export default function AgentTest() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input Area */}
             <form onSubmit={handleSendMessage} className="flex gap-2">
               <Input
                 placeholder="أرسل رسالة..."
@@ -180,13 +267,12 @@ export default function AgentTest() {
           </CardContent>
         </Card>
 
-        {/* ReAct Logs Sidebar */}
         <Card className="flex flex-col">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle>سجلات ReAct</CardTitle>
-                <CardDescription>خطوات التفكير والعمل</CardDescription>
+                <CardTitle>سجلات التشغيل</CardTitle>
+                <CardDescription>مزود LLM والزمن</CardDescription>
               </div>
               {reactLogs.length > 0 && (
                 <Button
@@ -203,7 +289,7 @@ export default function AgentTest() {
           <CardContent className="flex-1 overflow-y-auto space-y-3">
             {reactLogs.length === 0 ? (
               <p className="text-sm text-slate-500 text-center py-8">
-                السجلات ستظهر هنا
+                السجلات ستظهر هنا بعد أول رد
               </p>
             ) : (
               reactLogs.map((log) => (
@@ -218,7 +304,7 @@ export default function AgentTest() {
                       variant="ghost"
                       onClick={() =>
                         copyToClipboard(
-                          `${log.thought}\n${log.action}\n${log.observation}`
+                          `${log.thought}\n${log.action}\n${log.observation}`,
                         )
                       }
                       className="h-6 w-6 p-0"
@@ -234,8 +320,7 @@ export default function AgentTest() {
                       <span className="font-medium">الإجراء:</span> {log.action}
                     </p>
                     <p>
-                      <span className="font-medium">الملاحظة:</span>{' '}
-                      {log.observation}
+                      <span className="font-medium">الملاحظة:</span> {log.observation}
                     </p>
                   </div>
                 </div>
