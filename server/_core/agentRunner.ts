@@ -4,7 +4,7 @@
  * Loads an agent from DB (or uses ad-hoc config), calls the multi-provider
  * invokeLLM, emits AG-UI events, and persists execution records.
  *
- * This is the single place Channels SDK / any AG-UI client will talk to.
+ * Works fully in zero-config Demo mode (no DB, no real LLM keys).
  */
 
 import { nanoid } from "nanoid";
@@ -51,10 +51,6 @@ async function emit(
   if (onEvent) await onEvent(full);
 }
 
-/**
- * Chunk a full text into smaller deltas so AG-UI clients can stream-render
- * even when the underlying provider returns the complete completion at once.
- */
 function chunkText(text: string, size = 48): string[] {
   if (!text) return [];
   const chunks: string[] = [];
@@ -86,43 +82,54 @@ export async function runAgent(
   let executionRowId = executionId;
 
   try {
-    // Resolve agent config
     let systemPrompt =
-      "You are a helpful AI agent running on the AgenticAI platform.";
+      "You are a helpful AI agent running on the AgenticAI platform. " +
+      "When operating in demo mode you still answer clearly and helpfully.";
     let modelOverride = input.model;
     let agentRecord: Awaited<ReturnType<typeof db.getAgentById>> | undefined;
 
     if (input.agentId) {
-      agentRecord = await db.getAgentById(input.agentId);
+      try {
+        agentRecord = await db.getAgentById(input.agentId);
+      } catch (e) {
+        console.warn("[agentRunner] DB lookup failed, continuing in demo", e);
+        agentRecord = undefined;
+      }
+
       if (!agentRecord) {
-        throw new Error(`Agent ${input.agentId} not found`);
-      }
-      if (userId && agentRecord.userId !== userId) {
-        throw new Error(`Agent ${input.agentId} not found or not owned by you`);
-      }
-      if (agentRecord.systemPrompt) {
-        systemPrompt = agentRecord.systemPrompt;
-      }
-      if (!modelOverride && agentRecord.model) {
-        modelOverride = agentRecord.model;
+        // Zero-config: do not hard-fail — use a virtual demo agent
+        systemPrompt =
+          `You are Demo Agent #${input.agentId} on AgenticAI. ` +
+          "No database agent record was found (or DATABASE_URL is missing). " +
+          "Answer helpfully in demo mode.";
+      } else {
+        if (userId && agentRecord.userId !== userId) {
+          throw new Error(`Agent ${input.agentId} not found or not owned by you`);
+        }
+        if (agentRecord.systemPrompt) {
+          systemPrompt = agentRecord.systemPrompt;
+        }
+        if (!modelOverride && agentRecord.model) {
+          modelOverride = agentRecord.model;
+        }
       }
     }
 
-    // Persist pending execution
-    if (persist && userId && input.agentId) {
+    // Persist only when DB + user + real agent exist
+    if (persist && userId && input.agentId && agentRecord) {
       if (!executionRowId) {
         const userMessage =
           input.messages.filter((m) => m.role === "user").pop()?.content ?? "";
-        await db.createExecution({
-          agentId: input.agentId,
-          userId,
-          input: userMessage,
-          status: "running",
-        });
-        // Re-fetch latest id is awkward without returning insertId cleanly;
-        // we keep executionId optional and update by agent+user later if needed.
-      } else {
-        // status already set by caller
+        try {
+          await db.createExecution({
+            agentId: input.agentId,
+            userId,
+            input: userMessage,
+            status: "running",
+          });
+        } catch (e) {
+          console.warn("[agentRunner] createExecution skipped", e);
+        }
       }
     }
 
@@ -136,7 +143,6 @@ export async function runAgent(
       onEvent,
     );
 
-    // Build messages for multi-provider LLM
     const messages: Message[] = [
       { role: "system", content: systemPrompt },
       ...input.messages.map((m) => ({
@@ -145,7 +151,6 @@ export async function runAgent(
       })),
     ];
 
-    // Context injection
     if (input.context?.length) {
       const ctxText = input.context
         .map((c) => `[${c.description}]: ${c.value}`)
@@ -217,14 +222,12 @@ export async function runAgent(
     const latencyMs = Date.now() - startedAt;
     const tokensUsed = llmResult.usage?.total_tokens;
 
-    // Update execution if we can
-    if (persist && userId && input.agentId) {
+    if (persist && userId && input.agentId && agentRecord) {
       try {
         const database = await db.getDb();
         if (database) {
           const { agentExecutions } = await import("../../drizzle/schema");
           const { eq, and, desc } = await import("drizzle-orm");
-          // Update the most recent running/pending execution for this agent+user
           const recent = await database
             .select()
             .from(agentExecutions)
