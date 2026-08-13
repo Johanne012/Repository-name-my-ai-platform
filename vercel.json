@@ -34,6 +34,8 @@
     { "source": "/health", "destination": "/api" },
     { "source": "/api/trpc/:path*", "destination": "/api" },
     { "source": "/api/oauth/:path*", "destination": "/api" },
+    { "source": "/api/ag-ui", "destination": "/api" },
+    { "source": "/api/ag-ui/:path*", "destination": "/api" },
     { "source": "/((?!api(?:/|$)|assets/).*)", "destination": "/index.html" }
   ]
 }
