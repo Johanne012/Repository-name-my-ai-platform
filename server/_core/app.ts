@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
+import { registerAgUiRoutes } from "./aguiEndpoint";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { RequestLogger, ErrorHandler } from "../middleware";
@@ -78,6 +79,7 @@ app.get("/health", (_req, res) => {
 });
 
 registerOAuthRoutes(app);
+registerAgUiRoutes(app);
 
 app.use(
   "/api/trpc",
