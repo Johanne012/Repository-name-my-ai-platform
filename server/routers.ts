@@ -5,6 +5,7 @@ import { generateSecureApiKey } from "./apiKeys";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
+import { runAgent } from "./_core/agentRunner";
 import * as db from "./db";
 import { stripeRouter } from "./stripe-routers";
 
@@ -84,11 +85,69 @@ export const appRouter = router({
         }
         return { success: true };
       }),
+
+    /** Run an agent with a user message (uses multi-provider LLM + AG-UI events internally) */
+    run: protectedProcedure
+      .input(
+        z.object({
+          agentId: z.number(),
+          message: z.string().min(1),
+          threadId: z.string().optional(),
+          model: z.string().optional(),
+        }),
+      )
+      .mutation(async ({ ctx, input }) => {
+        const agent = await db.getAgentByIdForUser(input.agentId, ctx.user.id);
+        if (!agent) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
+        }
+        if (agent.status !== "active") {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Agent is not active",
+          });
+        }
+
+        try {
+          const result = await runAgent({
+            userId: ctx.user.id,
+            persist: true,
+            input: {
+              agentId: input.agentId,
+              threadId: input.threadId,
+              model: input.model,
+              messages: [{ role: "user", content: input.message }],
+            },
+          });
+
+          return {
+            ok: true as const,
+            threadId: result.threadId,
+            runId: result.runId,
+            output: result.output,
+            model: result.model,
+            provider: result.provider,
+            latencyMs: result.latencyMs,
+            tokensUsed: result.tokensUsed,
+            executionId: result.executionId,
+          };
+        } catch (err: any) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: err?.message || "Agent run failed",
+          });
+        }
+      }),
   }),
 
   executions: router({
     list: protectedProcedure
-      .input(z.object({ agentId: z.number(), limit: z.number().min(1).max(200).default(50) }))
+      .input(
+        z.object({
+          agentId: z.number(),
+          limit: z.number().min(1).max(200).default(50),
+        }),
+      )
       .query(async ({ ctx, input }) => {
         const rows = await db.getAgentExecutionsForUser(
           input.agentId,
@@ -107,6 +166,8 @@ export const appRouter = router({
           agentId: z.number(),
           input: z.string(),
           reactLogs: z.any().optional(),
+          /** When true, immediately run the agent and return the result */
+          runNow: z.boolean().optional().default(false),
         }),
       )
       .mutation(async ({ ctx, input }) => {
@@ -114,13 +175,36 @@ export const appRouter = router({
         if (!agent) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Agent not found" });
         }
-        return db.createExecution({
-          agentId: input.agentId,
+
+        if (!input.runNow) {
+          return db.createExecution({
+            agentId: input.agentId,
+            userId: ctx.user.id,
+            input: input.input,
+            reactLogs: input.reactLogs,
+            status: "pending",
+          });
+        }
+
+        const result = await runAgent({
           userId: ctx.user.id,
-          input: input.input,
-          reactLogs: input.reactLogs,
-          status: "pending",
+          persist: true,
+          input: {
+            agentId: input.agentId,
+            messages: [{ role: "user", content: input.input }],
+          },
         });
+
+        return {
+          status: "completed",
+          output: result.output,
+          threadId: result.threadId,
+          runId: result.runId,
+          model: result.model,
+          provider: result.provider,
+          latencyMs: result.latencyMs,
+          executionId: result.executionId,
+        };
       }),
   }),
 
