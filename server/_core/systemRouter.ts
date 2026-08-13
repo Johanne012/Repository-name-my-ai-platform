@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { notifyOwner } from "./notification";
-import { getProviderHealth, listAvailableProviders } from "./llm";
+import {
+  getProviderHealth,
+  listAvailableProviders,
+  isDemoOnlyMode,
+} from "./llm";
 import { adminProcedure, publicProcedure, router } from "./trpc";
 
 function readiness() {
@@ -22,6 +26,7 @@ function readiness() {
     cloudflare: Boolean(
       process.env.CLOUDFLARE_ACCOUNT_ID && process.env.CLOUDFLARE_API_TOKEN,
     ),
+    demo: true, // always available
   };
 }
 
@@ -42,7 +47,7 @@ export const systemRouter = router({
   status: publicProcedure.query(() => {
     const env = readiness();
     const llmProviders = listAvailableProviders();
-    const hasAnyLlm =
+    const hasAnyRealLlm =
       env.forge ||
       env.gemini ||
       env.groq ||
@@ -53,17 +58,35 @@ export const systemRouter = router({
       env.githubModels ||
       env.cloudflare;
 
-    const ready = env.database && env.jwt;
+    const demoOnly = isDemoOnlyMode();
+
+    // Platform is operational for agent runs even without DB/JWT/real LLM
+    // (demo provider + public AG-UI endpoints).
+    const agentRuntimeReady = true;
+    const fullStackReady = env.database && env.jwt && hasAnyRealLlm;
+
+    let status: "ok" | "demo" | "degraded" = "ok";
+    if (demoOnly) status = "demo";
+    else if (!fullStackReady) status = "degraded";
+
     return {
-      ok: ready,
-      status: ready ? (hasAnyLlm ? "ok" : "degraded") : "degraded",
+      ok: agentRuntimeReady,
+      status,
+      mode: demoOnly ? "demo" : hasAnyRealLlm ? "production-llm" : "partial",
       service: "agentic-ai",
       version: process.env.npm_package_version || "1.0.0",
       runtime: process.env.VERCEL ? "vercel-serverless" : "node",
       time: new Date().toISOString(),
+      message: demoOnly
+        ? "Running in zero-config Demo mode. Agent endpoints work. Add GEMINI_API_KEY (or other) + DATABASE_URL for full production."
+        : fullStackReady
+          ? "All systems ready."
+          : "LLM configured; database or JWT still missing for full auth/persistence.",
       env,
       llm: {
         configured: llmProviders.length,
+        realProviders: llmProviders.filter((p) => p.id !== "demo").length,
+        demoOnly,
         providers: llmProviders,
       },
     } as const;
@@ -73,6 +96,7 @@ export const systemRouter = router({
   llmHealth: publicProcedure.query(() => {
     return {
       time: new Date().toISOString(),
+      demoOnly: isDemoOnlyMode(),
       providers: getProviderHealth(),
     } as const;
   }),
