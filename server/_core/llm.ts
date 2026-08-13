@@ -7,6 +7,7 @@
  * - Automatic error classification → skip / retry / disable temporarily
  * - Learn from success / latency / failure rates and reorder providers continuously
  * - Backward-compatible with the original Manus forge endpoint
+ * - Built-in "demo" provider so the platform works with ZERO external keys
  */
 
 import { ENV } from "./env";
@@ -126,6 +127,7 @@ export type InvokeResult = {
 // ---------------------------------------------------------------------------
 
 type ProviderId =
+  | "demo"
   | "forge"
   | "gemini"
   | "groq"
@@ -150,6 +152,8 @@ type ProviderConfig = {
   headers?: Record<string, string>;
   /** Priority weight used as initial ranking (higher = preferred) */
   baseScore: number;
+  /** Local / offline handler — no network */
+  local?: boolean;
   /** Special request adapter (optional) */
   adaptRequest?: (payload: Record<string, unknown>) => Record<string, unknown>;
   /** Special response adapter (optional) */
@@ -196,7 +200,6 @@ function recordSuccess(id: ProviderId, latencyMs: number) {
   s.totalLatencyMs += latencyMs;
   s.lastSuccessAt = Date.now();
   s.consecutiveFailures = 0;
-  // Clear any previous circuit if it recovered
   if (s.disabledUntil > 0 && Date.now() > s.disabledUntil) {
     s.disabledUntil = 0;
   }
@@ -208,9 +211,7 @@ function recordFailure(id: ProviderId, isRateLimitOrTransient: boolean) {
   s.lastFailureAt = Date.now();
   s.consecutiveFailures += 1;
 
-  // Circuit breaker: after 3 consecutive failures, disable for a while
   if (s.consecutiveFailures >= 3) {
-    // Longer cooldown for rate-limits
     const cooldownMs = isRateLimitOrTransient ? 60_000 : 30_000;
     s.disabledUntil = Date.now() + cooldownMs;
   }
@@ -222,13 +223,146 @@ function dynamicScore(cfg: ProviderConfig): number {
   if (s.disabledUntil > Date.now()) return -Infinity;
 
   const total = s.successes + s.failures;
-  const successRate = total === 0 ? 0.85 : s.successes / total; // optimistic prior
+  const successRate = total === 0 ? 0.85 : s.successes / total;
   const avgLatency =
     s.successes === 0 ? 2500 : s.totalLatencyMs / s.successes;
 
-  // Prefer high success rate + lower latency + base preference
   const latencyScore = Math.max(0, 5000 - avgLatency) / 5000;
   return cfg.baseScore * 0.4 + successRate * 40 + latencyScore * 20;
+}
+
+// ---------------------------------------------------------------------------
+// Built-in DEMO provider (zero external dependencies)
+// ---------------------------------------------------------------------------
+
+function extractLastUserText(messages: unknown): string {
+  if (!Array.isArray(messages)) return "";
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i] as { role?: string; content?: unknown };
+    if (m?.role !== "user") continue;
+    const c = m.content;
+    if (typeof c === "string") return c;
+    if (Array.isArray(c)) {
+      return c
+        .map((p) =>
+          typeof p === "string"
+            ? p
+            : p && typeof p === "object" && "text" in p
+              ? String((p as { text: string }).text)
+              : "",
+        )
+        .join(" ");
+    }
+  }
+  return "";
+}
+
+function buildDemoReply(userText: string, systemHint: string): string {
+  const q = (userText || "").trim();
+  const lower = q.toLowerCase();
+
+  // Arabic / English keyword responses for a usable demo experience
+  if (!q) {
+    return (
+      "مرحباً! أنا وكيل العرض التوضيحي (Demo Agent) على منصة AgenticAI.\n" +
+      "المنصة تعمل الآن بدون مفاتيح خارجية. أضف GEMINI_API_KEY أو GROQ_API_KEY في Vercel لتفعيل نماذج حقيقية.\n\n" +
+      "Hello! I'm the built-in Demo Agent. The platform is live with zero external keys. " +
+      "Add a real LLM key in Vercel env to unlock production models."
+    );
+  }
+
+  if (
+    lower.includes("health") ||
+    lower.includes("status") ||
+    q.includes("صحة") ||
+    q.includes("حالة")
+  ) {
+    return (
+      "✅ النظام في وضع Demo ويعمل.\n" +
+      "- LLM: demo (محلي، بدون API)\n" +
+      "- AG-UI: /api/ag-ui و /api/ag-ui/run متاحان\n" +
+      "- عند إضافة مفتاح حقيقي يتم التبديل تلقائياً مع fallback ذكي.\n\n" +
+      "System is healthy in Demo mode. Real providers activate automatically when keys are set."
+    );
+  }
+
+  if (
+    lower.includes("who are you") ||
+    lower.includes("what are you") ||
+    q.includes("من أنت") ||
+    q.includes("ما أنت")
+  ) {
+    return (
+      "أنا الوكيل التجريبي المدمج في منصة AgenticAI.\n" +
+      "أدعم بروتوكول AG-UI، التشغيل متعدد المزودين، والدوائر الكهربائية (circuit breaker) والتعلم من الأداء.\n" +
+      "حالياً أرد محلياً لأن لا يوجد مفتاح LLM مُعدّ."
+    );
+  }
+
+  if (lower.includes("help") || q.includes("مساعدة") || q.includes("ساعدني")) {
+    return (
+      "يمكنك:\n" +
+      "1) إرسال رسالة هنا — سأرد فوراً (وضع Demo)\n" +
+      "2) استدعاء POST /api/ag-ui/run مع { messages: [{ role: 'user', content: '...' }] }\n" +
+      "3) إضافة مفتاح مجاني (Gemini / Groq / OpenRouter) في متغيرات Vercel للردود الحقيقية\n" +
+      "4) مراجعة /api/trpc/system.status و system.llmHealth"
+    );
+  }
+
+  // Generic contextual echo with structure
+  const preview = q.length > 280 ? q.slice(0, 280) + "…" : q;
+  const sys =
+    systemHint && systemHint.length > 20
+      ? `\n\n(سياق النظام: ${systemHint.slice(0, 120)}${systemHint.length > 120 ? "…" : ""})`
+      : "";
+
+  return (
+    `📦 **Demo Agent** (لا مفتاح خارجي)\n\n` +
+    `فهمت طلبك:\n> ${preview}\n\n` +
+    `هذا رد تجريبي من المنصة لإثبات أن مسار الوكيل + AG-UI يعمل بالكامل. ` +
+    `بمجرد ضبط مفتاح LLM حقيقي (مثل GEMINI_API_KEY) سيتولى مزود حقيقي الرد مع نفس الواجهة والـ fallback الذكي.` +
+    sys +
+    `\n\n— AgenticAI · provider=demo`
+  );
+}
+
+function runDemoProvider(payload: Record<string, unknown>): InvokeResult {
+  const messages = payload.messages;
+  const userText = extractLastUserText(messages);
+  let systemHint = "";
+  if (Array.isArray(messages)) {
+    for (const m of messages as Array<{ role?: string; content?: unknown }>) {
+      if (m.role === "system") {
+        systemHint =
+          typeof m.content === "string"
+            ? m.content
+            : JSON.stringify(m.content ?? "");
+        break;
+      }
+    }
+  }
+
+  const text = buildDemoReply(userText, systemHint);
+  const id = `demo-${Date.now().toString(36)}`;
+
+  return {
+    id,
+    created: Math.floor(Date.now() / 1000),
+    model: "demo-agent-v1",
+    choices: [
+      {
+        index: 0,
+        message: { role: "assistant", content: text },
+        finish_reason: "stop",
+      },
+    ],
+    usage: {
+      prompt_tokens: Math.ceil((userText.length || 1) / 4),
+      completion_tokens: Math.ceil(text.length / 4),
+      total_tokens: Math.ceil(((userText.length || 1) + text.length) / 4),
+    },
+    _provider: "demo",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -238,7 +372,20 @@ function dynamicScore(cfg: ProviderConfig): number {
 function buildProviders(): ProviderConfig[] {
   const providers: ProviderConfig[] = [];
 
-  // 1. Legacy Manus forge (highest base score if present)
+  // 0. Always-available local demo (lowest base score — used only as last resort
+  //    unless no other provider is configured)
+  providers.push({
+    id: "demo",
+    name: "Built-in Demo (zero-config)",
+    enabled: true,
+    baseUrl: "local://demo",
+    apiKey: "demo",
+    defaultModel: "demo-agent-v1",
+    baseScore: 5,
+    local: true,
+  });
+
+  // 1. Legacy Manus forge
   if (ENV.forgeApiKey) {
     const base =
       ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
@@ -255,7 +402,7 @@ function buildProviders(): ProviderConfig[] {
     });
   }
 
-  // 2. Google Gemini (native OpenAI-compatible endpoint)
+  // 2. Google Gemini
   if (ENV.geminiApiKey) {
     providers.push({
       id: "gemini",
@@ -282,7 +429,7 @@ function buildProviders(): ProviderConfig[] {
     });
   }
 
-  // 4. OpenRouter (aggregator — many free models)
+  // 4. OpenRouter
   if (ENV.openRouterApiKey) {
     providers.push({
       id: "openrouter",
@@ -292,7 +439,8 @@ function buildProviders(): ProviderConfig[] {
       apiKey: ENV.openRouterApiKey,
       defaultModel: "openrouter/auto",
       headers: {
-        "HTTP-Referer": "https://github.com/Johanne012/Repository-name-my-ai-platform",
+        "HTTP-Referer":
+          "https://github.com/Johanne012/Repository-name-my-ai-platform",
         "X-Title": "AgenticAI Platform",
       },
       baseScore: 85,
@@ -351,8 +499,7 @@ function buildProviders(): ProviderConfig[] {
     });
   }
 
-  // 9. Cloudflare Workers AI (OpenAI-compatible via AI Gateway style or direct)
-  // Direct Workers AI uses a slightly different path; we use the OpenAI-compatible endpoint when available.
+  // 9. Cloudflare Workers AI
   if (ENV.cloudflareAccountId && ENV.cloudflareApiToken) {
     providers.push({
       id: "cloudflare",
@@ -368,7 +515,7 @@ function buildProviders(): ProviderConfig[] {
   return providers;
 }
 
-/** Returns providers ordered by adaptive score (best first) */
+/** Returns providers ordered by adaptive score (best first). Demo is last unless alone. */
 function getOrderedProviders(forceId?: string): ProviderConfig[] {
   const all = buildProviders().filter((p) => p.enabled);
 
@@ -377,17 +524,25 @@ function getOrderedProviders(forceId?: string): ProviderConfig[] {
     return forced ? [forced] : [];
   }
 
-  // Optional static preferred order from env (comma-separated ids)
+  const real = all.filter((p) => p.id !== "demo");
+  const demo = all.filter((p) => p.id === "demo");
+
+  // If at least one real provider exists, use them first; demo only as ultimate fallback
+  const pool = real.length > 0 ? [...real, ...demo] : demo;
+
   const preferred = ENV.llmPreferredOrder
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
 
-  const scored = all
+  const scored = pool
     .map((p) => ({ p, score: dynamicScore(p) }))
     .filter((x) => x.score > -Infinity)
     .sort((a, b) => {
-      // Respect explicit preferred order first
+      // Demo always last among enabled scores unless it is the only one
+      if (a.p.id === "demo" && b.p.id !== "demo") return 1;
+      if (b.p.id === "demo" && a.p.id !== "demo") return -1;
+
       const ai = preferred.indexOf(a.p.id);
       const bi = preferred.indexOf(b.p.id);
       if (ai !== -1 || bi !== -1) {
@@ -503,6 +658,11 @@ async function callProvider(
   payload: Record<string, unknown>,
   timeoutMs: number,
 ): Promise<InvokeResult> {
+  // Local demo — no network
+  if (provider.local || provider.id === "demo") {
+    return runDemoProvider(payload);
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -560,12 +720,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
 
   const ordered = getOrderedProviders(forceProvider);
   if (ordered.length === 0) {
-    throw new Error(
-      "No LLM provider is configured or currently available. " +
-        "Set at least one of: GEMINI_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY, " +
-        "NVIDIA_API_KEY, CEREBRAS_API_KEY, MISTRAL_API_KEY, GITHUB_TOKEN, " +
-        "CLOUDFLARE_ACCOUNT_ID+CLOUDFLARE_API_TOKEN, or BUILT_IN_FORGE_API_KEY.",
-    );
+    // Should never happen — demo is always registered
+    throw new Error("No LLM provider available (including built-in demo).");
   }
 
   const basePayload: Record<string, unknown> = {
@@ -606,7 +762,6 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
       model: forceModel || provider.defaultModel,
     };
 
-    // Special handling for forge which used extra fields historically
     if (provider.id === "forge") {
       (payload as any).thinking = { budget_tokens: 128 };
       if (!forceModel) payload.model = "gemini-2.5-flash";
@@ -621,7 +776,6 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
       const latency = Date.now() - start;
       recordSuccess(provider.id, latency);
 
-      // Attach metadata so callers / logs can see which provider won
       result._provider = provider.id;
       result._latencyMs = latency;
       return result;
@@ -636,12 +790,10 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
       const msg = `[${provider.id}] ${err?.message || String(err)} (${latency}ms)`;
       errors.push(msg);
 
-      // Auth errors → skip this provider for a longer time
       if (isAuth) {
         getStats(provider.id).disabledUntil = Date.now() + 5 * 60_000;
       }
 
-      // Continue to next provider
       continue;
     }
   }
@@ -664,6 +816,7 @@ export function getProviderHealth() {
       id: p.id,
       name: p.name,
       enabled: p.enabled,
+      local: Boolean(p.local),
       circuitOpen: s.disabledUntil > Date.now(),
       disabledUntil: s.disabledUntil || null,
       successes: s.successes,
@@ -684,6 +837,12 @@ export function listAvailableProviders() {
     id: p.id,
     name: p.name,
     enabled: p.enabled,
+    local: Boolean(p.local),
     defaultModel: p.defaultModel,
   }));
+}
+
+/** True when only the built-in demo provider is available (no real API keys). */
+export function isDemoOnlyMode(): boolean {
+  return buildProviders().filter((p) => p.enabled && p.id !== "demo").length === 0;
 }
