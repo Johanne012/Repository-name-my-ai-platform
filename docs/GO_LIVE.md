@@ -1,27 +1,20 @@
 # تشغيل المنصة كلياً (Go Live Checklist)
 
-الحالة الحالية على الإنتاج غالباً **degraded** حتى تُضبط المتغيرات التالية.
+## وضع Demo — بدون أي إعداد (يعمل الآن)
 
-## ما يعمل الآن بدون إعداد
+المنصة تحتوي على **مزود Demo مدمج** يعمل تلقائياً عندما لا توجد مفاتيح LLM.
 
-- الواجهة الثابتة على Vercel
-- `/health` و `system.status`
-- مسارات AG-UI: `POST /api/ag-ui` و `POST /api/ag-ui/run`
-- واجهة اختبار الوكيل مربوطة بالمحرك الحقيقي (وليست mock)
+| الميزة | الحالة بدون مفاتيح |
+|--------|---------------------|
+| الواجهة على Vercel | ✅ |
+| `/health` و `system.status` | ✅ (`status: "demo"`) |
+| `POST /api/ag-ui/run` | ✅ ردود Demo فورية |
+| `POST /api/ag-ui` (SSE) | ✅ |
+| صفحة اختبار الوكيل | ✅ |
+| حفظ مستخدمين/وكلاء في DB | ❌ يحتاج `DATABASE_URL` |
+| نماذج LLM حقيقية | ❌ يحتاج مفتاح واحد |
 
-## الحد الأدنى لتشغيل LLM فعلياً
-
-في Vercel → Project → Settings → Environment Variables → **Production**:
-
-| المتغير | مثال | لماذا |
-|---------|------|--------|
-| `GEMINI_API_KEY` | من [Google AI Studio](https://aistudio.google.com/apikey) | أبسط مزود مجاني قوي |
-| أو `GROQ_API_KEY` | من console.groq.com | سرعة عالية |
-| أو `OPENROUTER_API_KEY` | من openrouter.ai | تنوع نماذج |
-
-ثم **Redeploy**.
-
-اختبار فوري:
+اختبار فوري (بدون أي متغيرات):
 
 ```bash
 curl -s -X POST https://repository-name-my-ai-platform.vercel.app/api/ag-ui/run \
@@ -29,39 +22,43 @@ curl -s -X POST https://repository-name-my-ai-platform.vercel.app/api/ag-ui/run 
   -d '{"messages":[{"role":"user","content":"قل مرحبا بالعربية"}]}'
 ```
 
-المتوقع: `{"ok":true,"output":"...","provider":"gemini",...}`
+المتوقع: `{"ok":true,"output":"...","provider":"demo",...}`
 
-## الحد الأدنى للوحة التحكم + حفظ الوكلاء
+بعد نشر آخر commits (Demo provider) قد تحتاج Vercel دقيقة لإعادة البناء التلقائي من `main`.
+
+---
+
+## ترقية إلى LLM حقيقي (اختياري — تدخل بسيط منك)
+
+في Vercel → Settings → Environment Variables → Production:
+
+| المتغير | مصدر مجاني |
+|---------|-------------|
+| `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/apikey) |
+| أو `GROQ_API_KEY` | console.groq.com |
+| أو `OPENROUTER_API_KEY` | openrouter.ai |
+
+ثم **Redeploy**. المزود الحقيقي يُفضَّل تلقائياً؛ Demo يبقى كـ fallback.
+
+---
+
+## ترقية للحفظ + لوحة التحكم
 
 | المتغير | كيف |
 |---------|-----|
 | `DATABASE_URL` | TiDB Cloud Serverless أو Aiven MySQL — نفّذ `scripts/schema.sql` |
 | `JWT_SECRET` | `openssl rand -hex 32` |
 
-دليل مفصل: [DATABASE_SETUP.md](./DATABASE_SETUP.md)
+دليل: [DATABASE_SETUP.md](./DATABASE_SETUP.md)
 
-بعدها `/health` يجب أن يعيد `"status":"ok"` و `"database":true` و `"jwt":true`.
+---
 
-## المصادقة (اختياري للبداية)
+## المصادقة والفوترة (لاحقاً)
 
-المنصة مصممة لـ Manus OAuth:
+- OAuth: `OAUTH_SERVER_URL` · `VITE_APP_ID` · `OWNER_OPEN_ID`
+- Stripe: `STRIPE_SECRET_KEY` · webhooks · price ids
 
-- `OAUTH_SERVER_URL`
-- `VITE_APP_ID`
-- `OWNER_OPEN_ID` (أدمن)
-
-بدونها: مسارات `protected` (قائمة الوكلاء، API keys) لن تعمل لمستخدم مسجّل، لكن **دردشة AG-UI العامة** تعمل إذا وُجد مفتاح LLM.
-
-## الفوترة (اختياري)
-
-`STRIPE_SECRET_KEY` · `STRIPE_WEBHOOK_SECRET` · `STRIPE_PRICE_PRO` · `STRIPE_PRICE_ENTERPRISE`
-
-## ترتيب مقترح
-
-1. أضف `GEMINI_API_KEY` → Redeploy → اختبر `/api/ag-ui/run`
-2. أنشئ TiDB + نفّذ schema → أضف `DATABASE_URL` + `JWT_SECRET` → Redeploy
-3. افتح لوحة التحكم وأنشئ وكيلاً وجرّب صفحة اختبار الوكيل
-4. لاحقاً: OAuth و Stripe و Channels SDK (Slack)
+---
 
 ## روابط
 
