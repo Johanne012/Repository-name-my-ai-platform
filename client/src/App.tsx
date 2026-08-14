@@ -13,6 +13,7 @@ import Orchestration from "./pages/Orchestration";
 import Analytics from "./pages/Analytics";
 import ApiDocs from "./pages/ApiDocs";
 import Notifications from "./pages/Notifications";
+import Playground from "./pages/Playground";
 import Home from "@/pages/Home";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -22,6 +23,7 @@ function Router() {
   return (
     <Switch>
       <Route path={"/"} component={Home} />
+      <Route path={"/playground"} component={Playground} />
       <Route path={"/dashboard"} component={Dashboard} />
       <Route path={"/agents"} component={Agents} />
       <Route path={"/agent-test"} component={AgentTest} />
