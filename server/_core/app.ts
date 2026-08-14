@@ -5,9 +5,11 @@ import fs from "fs";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerAgUiRoutes } from "./aguiEndpoint";
+import { registerPublicApi } from "./publicApi";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { RequestLogger, ErrorHandler } from "../middleware";
+import { isDemoOnlyMode } from "./llm";
 
 function securityHeaders(
   _req: express.Request,
@@ -45,18 +47,6 @@ function resolvePublicDir(): string {
   return candidates[0];
 }
 
-function readiness() {
-  return {
-    database: Boolean(process.env.DATABASE_URL),
-    jwt: Boolean(process.env.JWT_SECRET),
-    oauth: Boolean(process.env.OAUTH_SERVER_URL),
-    stripe: Boolean(process.env.STRIPE_SECRET_KEY),
-    forge: Boolean(
-      process.env.BUILT_IN_FORGE_API_URL && process.env.BUILT_IN_FORGE_API_KEY,
-    ),
-  };
-}
-
 const app = express();
 
 app.disable("x-powered-by");
@@ -65,21 +55,26 @@ app.use(RequestLogger.middleware());
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ limit: "2mb", extended: true }));
 
+// Always healthy in zero-config mode — platform is usable without secrets
 app.get("/health", (_req, res) => {
-  const env = readiness();
-  const ready = env.database && env.jwt;
-  res.status(ready ? 200 : 503).json({
-    status: ready ? "ok" : "degraded",
+  const demoOnly = isDemoOnlyMode();
+  const hasDb = Boolean(process.env.DATABASE_URL);
+  const hasJwt = Boolean(process.env.JWT_SECRET);
+  res.status(200).json({
+    status: demoOnly ? "demo" : hasDb && hasJwt ? "ok" : "partial",
+    ok: true,
     service: "agentic-ai",
     version: process.env.npm_package_version || "1.0.0",
     time: new Date().toISOString(),
     runtime: process.env.VERCEL ? "vercel-serverless" : "node",
-    env,
+    zeroConfig: demoOnly || !hasDb,
+    publicApi: ["/api/public/chat", "/api/public/agents", "/api/ag-ui/run"],
   });
 });
 
 registerOAuthRoutes(app);
 registerAgUiRoutes(app);
+registerPublicApi(app);
 
 app.use(
   "/api/trpc",
@@ -89,7 +84,6 @@ app.use(
   }),
 );
 
-// Production static + SPA fallback (local `pnpm start`; on Vercel CDN serves static)
 if (process.env.NODE_ENV === "production" && !process.env.VERCEL) {
   const distPath = resolvePublicDir();
   if (!fs.existsSync(distPath)) {
